@@ -1,0 +1,98 @@
+// Schema do banco de dados do MVP Huesitos Manugo.
+// Pensado para crescer: mesmo com 1 produto hoje, Product é uma tabela
+// (não um valor fixo no código) para não exigir deploy toda vez que
+// mudar preço/descrição ou entrar um segundo produto.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Um produto do catálogo. Hoje só existe o "Huesito tradicional",
+// mas a modelagem já suporta múltiplos produtos/variações.
+model Product {
+  id                String   @id @default(cuid())
+  slug              String   @unique
+  name              String
+  description       String
+  imageUrl          String?
+  active            Boolean  @default(true)
+
+  // Preço unitário de varejo, em centavos (evita erro de ponto flutuante
+  // em dinheiro). Ex: R$ 12,90 = 1290.
+  retailPriceCents  Int
+
+  // Quantidade mínima para considerar "atacado" — usada só como
+  // referência na landing page; o preço de atacado em si é negociado
+  // via orçamento no MVP (ver WholesaleQuote), não é self-service ainda.
+  wholesaleMinQty   Int      @default(20)
+
+  orders            Order[]
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+enum OrderStatus {
+  PENDING    // preferência criada no Mercado Pago, aguardando pagamento
+  PAID       // pagamento confirmado via webhook
+  CANCELLED  // expirou ou foi cancelado
+  FAILED     // pagamento recusado
+}
+
+// Pedido de varejo (compra direta pelo checkout do Mercado Pago).
+model Order {
+  id                String      @id @default(cuid())
+  product           Product     @relation(fields: [productId], references: [id])
+  productId         String
+
+  quantity          Int
+  totalCents        Int
+
+  customerName      String
+  customerEmail     String
+  customerPhone     String
+
+  // Endereço de entrega — campos simples para o MVP (sem CEP lookup ainda).
+  addressStreet     String
+  addressNumber     String
+  addressComplement String?
+  addressCity       String
+  addressState      String
+  addressZip        String
+
+  status            OrderStatus @default(PENDING)
+
+  // IDs do Mercado Pago para conciliação e rastreio do pagamento.
+  mpPreferenceId    String?
+  mpPaymentId       String?
+
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+}
+
+enum QuoteStatus {
+  NEW
+  CONTACTED
+  CLOSED
+}
+
+// Lead de revenda/atacado. Não passa pelo checkout automático no MVP —
+// cai aqui e o time entra em contato (WhatsApp) para negociar
+// quantidade/preço/frete. Automatiza depois, quando houver volume real.
+model WholesaleQuote {
+  id          String      @id @default(cuid())
+  name        String
+  companyName String?
+  phone       String
+  email       String?
+  city        String?
+  quantity    Int
+  message     String?
+  status      QuoteStatus @default(NEW)
+  createdAt   DateTime    @default(now())
+}
